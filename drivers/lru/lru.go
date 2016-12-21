@@ -44,6 +44,12 @@ var (
 	// ErrCannotAssignValue is returned when a previously set cache value pointer cannot be
 	// updated because the new value's type cannot be assigned to the previous value's type.
 	ErrCannotAssignValue = errors.New("cannot assign value")
+
+	getEntryPool = sync.Pool{
+		New: func() interface{} {
+			return &entry{}
+		},
+	}
 )
 
 // LRU is a least recently used in-memory cache implementation
@@ -86,7 +92,9 @@ func New(maxSize uint64, maxEntries int) *LRU {
 // Set sets the key/value pair
 func (c *LRU) Set(key string, value interface{}, exp time.Duration) error {
 
-	ent := &entry{key: key, value: value}
+	ent := getEntryPool.Get().(*entry)
+	ent.key = key
+	ent.value = value
 	if exp != NeverExpires {
 		ent.exp = time.Now().Add(exp)
 	}
@@ -132,56 +140,56 @@ func (c *LRU) Start() {
 		select {
 		case <-c.ticker.C:
 
-			// If too many entries, delete excess. Find expired as well.
-			var ent *entry
-			var del []*list.Element
-			now := time.Now()
+			go func() {
+				// If too many entries, delete excess. Find expired as well.
+				var ent *entry
+				var del []*list.Element
+				now := time.Now()
 
-			// Check for expired items.
-			c.RLock()
-			maxEntries := c.MaxEntries
-			maxSize := c.MaxSize
-			for _, ele := range c.cache {
-				ent = ele.Value.(*entry)
-				if ent.exp.IsZero() {
-					continue
-				}
-				if now.After(ent.exp) {
-					del = append(del, ele)
-				}
-			}
-
-			// Calculate the future length, taking into consideration
-			// the elements we're going to delete
-			l := c.ll.Len() - len(del)
-
-			// Remove the excess entries
-			if maxEntries > 0 && l > maxEntries {
-				for i := 0; i < l-maxEntries; i++ {
-					del = append(del, c.ll.Back())
-				}
-			}
-			c.RUnlock()
-
-			// Remove the elements, so we can calculate the total size better.
-			c.removeElements(del)
-
-			// If in-memory size too big, delete until it's not
-			if maxSize > 0 {
-				c.RLock()
-				var toDelete []*list.Element
-				size := uint64(reflect.TypeOf(c.cache).Size())
-				for {
-					if size < maxSize {
-						break
+				// Check for expired items.
+				c.Lock()
+				defer c.Unlock()
+				maxEntries := c.MaxEntries
+				maxSize := c.MaxSize
+				for _, ele := range c.cache {
+					ent = ele.Value.(*entry)
+					if ent.exp.IsZero() {
+						continue
 					}
-					last := c.ll.Back()
-					size -= uint64(reflect.TypeOf(last).Size())
-					toDelete = append(toDelete, last)
+					if now.After(ent.exp) {
+						del = append(del, ele)
+					}
 				}
-				c.RUnlock()
-				c.removeElements(toDelete)
-			}
+
+				// Calculate the future length, taking into consideration
+				// the elements we're going to delete
+				l := c.ll.Len() - len(del)
+
+				// Remove the excess entries
+				if maxEntries > 0 && l > maxEntries {
+					for i := 0; i < l-maxEntries; i++ {
+						del = append(del, c.ll.Back())
+					}
+				}
+
+				// Remove the elements, so we can calculate the total size better.
+				c.removeElements(del)
+
+				// If in-memory size too big, delete until it's not
+				if maxSize > 0 {
+					var toDelete []*list.Element
+					size := uint64(reflect.TypeOf(c.cache).Size())
+					for {
+						if size < maxSize {
+							break
+						}
+						last := c.ll.Back()
+						size -= uint64(reflect.TypeOf(last).Size())
+						toDelete = append(toDelete, last)
+					}
+					c.removeElements(toDelete)
+				}
+			}()
 		}
 	}()
 }
@@ -226,9 +234,9 @@ func (c *LRU) Get(key string, dstVal interface{}) (err error) {
 
 // Del removes the key from the cache
 func (c *LRU) Del(key string) (err error) {
-	c.RLock()
+	c.Lock()
+	defer c.Unlock()
 	ele, hit := c.cache[key]
-	c.RUnlock()
 	if hit {
 		c.removeElement(ele)
 	}
@@ -256,19 +264,12 @@ func (c *LRU) removeElement(e *list.Element) {
 }
 
 func (c *LRU) removeElements(e []*list.Element) {
-	c.Lock()
 	for i := range e {
 		c.ll.Remove(e[i])
 		kv := e[i].Value.(*entry)
 		delete(c.cache, kv.key)
+		getEntryPool.Put(kv)
 	}
-	c.Unlock()
-}
-
-// Stop clears the ticker which removes expired items. This is so it can be
-// garbage collected. If you need it again, you must reset with Start()
-func (c *LRU) Stop() {
-	c.ticker.Stop()
 }
 
 // Touch updates the expiry for the given key

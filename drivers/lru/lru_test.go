@@ -136,27 +136,12 @@ func TestTicker(t *testing.T) {
 	assert.NotNil(t, c.ticker)
 }
 
-func TestTickerStopWithNoTicker(t *testing.T) {
-	c := New(Megabyte, 10)
-	assert.NotPanics(t, c.Stop)
-}
-
 func TestSizeEviction(t *testing.T) {
 	c := New(Byte, 100)
 	bar := "bar"
 	assert.NoError(t, c.Set("foo", bar, 0))
 	time.Sleep(TickerDuration * 2)
 	assert.Equal(t, cache.ErrCacheMiss, c.Get("foo", &bar))
-}
-
-func TestTickerStop(t *testing.T) {
-	c := New(Byte, 1)
-	bar := "bar"
-	assert.NoError(t, c.Set("foo", bar, 0))
-	c.Stop()
-	time.Sleep(TickerDuration * 2)
-	assert.NoError(t, c.Set("bar", "foo", 0))
-	assert.NoError(t, c.Get("foo", &bar))
 }
 
 func TestAdd(t *testing.T) {
@@ -354,6 +339,18 @@ func BenchmarkGetSetParallel(b *testing.B) {
 			var s string
 			c.Set("foo", "bar", 0)
 			c.Get("foo", &s)
+		}
+	})
+}
+
+func BenchmarkGetSetDelParallel(b *testing.B) {
+	c := New(Gigabyte, 500000)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			var s string
+			c.Set("foo", "bar", 0)
+			c.Get("foo", &s)
+			c.Del("foo")
 		}
 	})
 }
