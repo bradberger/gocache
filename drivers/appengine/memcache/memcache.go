@@ -1,3 +1,4 @@
+// Package memecache implements a cache driver for Google App Engine Go mememcache
 package memcache
 
 import (

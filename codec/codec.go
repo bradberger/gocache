@@ -1,3 +1,4 @@
+// Package codec implements codecs for marshaling/unmarshaling of native Go types into byte slices
 package codec
 
 import (

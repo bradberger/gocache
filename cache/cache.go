@@ -1,3 +1,4 @@
+// Package cache defines common interfaces and error types which are implemented by drivers
 package cache
 
 import (

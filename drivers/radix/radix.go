@@ -1,3 +1,4 @@
+// Package radix implements a driver for github.com/armon/go-radix
 package radix
 
 import (

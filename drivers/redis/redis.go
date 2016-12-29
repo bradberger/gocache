@@ -1,3 +1,4 @@
+// Package redis implements a driver for github.com/garyburd/redigo/redis
 package redis
 
 import (

@@ -1,3 +1,4 @@
+// Package bigcache implements a BigCache driver for github.com/allegro/bigcache
 package bigcache
 
 import (

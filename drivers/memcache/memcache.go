@@ -1,3 +1,4 @@
+// Package memcache implements a memcache driver for github.com/bradfitz/gomemcache/memcache
 package memcache
 
 import (

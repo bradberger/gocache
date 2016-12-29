@@ -1,3 +1,4 @@
+// Package freecache implements a FreeCache driver for github.com/coocood/freecache
 package freecache
 
 import (
