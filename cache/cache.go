@@ -3,6 +3,7 @@ package cache
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 )
 
@@ -24,6 +25,16 @@ var (
 	// ErrNotFound indicates that the item you are trying to store
 	// with a "cas" command did not exist.
 	ErrNotFound = errors.New("not found")
+	// ErrUnsupportedAction indicates that the selected driver doesn't support the given action
+	ErrUnsupportedAction = errors.New("not supported")
+	// ErrCannotSetValue is returned when an previously set cache value pointer cannot be set.
+	ErrCannotSetValue = errors.New("cannot set value of interface")
+	// ErrCannotAssignValue is returned when a previously set cache value pointer cannot be
+	// updated because the new value's type cannot be assigned to the previous value's type.
+	ErrCannotAssignValue = errors.New("cannot assign value")
+
+	// NeverExpires is the duration which should be set for a key to never expire because of duration
+	NeverExpires = time.Duration(0)
 )
 
 // Cache defines a cache with key expiration. Implementations of this interface
@@ -125,4 +136,26 @@ func Key(key interface{}) string {
 	default:
 		return fmt.Sprintf("%#v", key)
 	}
+}
+
+// Copy copies one interface into the other doing type checking to make sure
+// it's safe. If it cannot be copied, an error is returned.
+func Copy(srcVal interface{}, dstVal interface{}) error {
+
+	curEl := reflect.ValueOf(srcVal)
+	if curEl.Kind() == reflect.Ptr {
+		curEl = curEl.Elem()
+	}
+	dstEl := reflect.ValueOf(dstVal)
+	if dstEl.Kind() == reflect.Ptr {
+		dstEl = dstEl.Elem()
+	}
+	if !dstEl.CanSet() {
+		return ErrInvalidDstVal
+	}
+	if !curEl.Type().AssignableTo(dstEl.Type()) {
+		return ErrCannotAssignValue
+	}
+	dstEl.Set(curEl)
+	return nil
 }

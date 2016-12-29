@@ -21,8 +21,6 @@ const (
 	Megabyte        = Kilobyte << 10
 	Gigabyte        = Megabyte << 10
 	Terabyte        = Gigabyte << 10
-
-	NeverExpires = time.Duration(0)
 )
 
 var (
@@ -95,7 +93,7 @@ func (c *LRU) Set(key string, value interface{}, exp time.Duration) error {
 	ent := getEntryPool.Get().(*entry)
 	ent.key = key
 	ent.value = value
-	if exp != NeverExpires {
+	if exp != cache.NeverExpires {
 		ent.exp = time.Now().Add(exp)
 	}
 
@@ -117,13 +115,7 @@ func (c *LRU) Set(key string, value interface{}, exp time.Duration) error {
 		// If underlying value is a pointer, we must reflect.ValueOf(ee.Value).Kind()make sure that the
 		// new value and the previous value are the same types, otherwise
 		// unexpected panics could occur.
-		newEl := reflect.ValueOf(value)
-		curEl = curEl.Elem()
-		if !curEl.Type().AssignableTo(newEl.Type()) {
-			return ErrCannotAssignValue
-		}
-		curEl.Set(newEl)
-		return nil
+		return cache.Copy(value, ee.Value.(*entry).value)
 	}
 
 	ele := c.ll.PushFront(ent)
@@ -214,22 +206,7 @@ func (c *LRU) Get(key string, dstVal interface{}) (err error) {
 
 	// Move element to front
 	c.ll.MoveToFront(ele)
-	curEl := reflect.ValueOf(ele.Value.(*entry).value)
-	if curEl.Kind() == reflect.Ptr {
-		curEl = curEl.Elem()
-	}
-	dstEl := reflect.ValueOf(dstVal)
-	if dstEl.Kind() == reflect.Ptr {
-		dstEl = dstEl.Elem()
-	}
-	if !dstEl.CanSet() {
-		return cache.ErrInvalidDstVal
-	}
-	if !curEl.Type().AssignableTo(dstEl.Type()) {
-		return ErrCannotAssignValue
-	}
-	dstEl.Set(curEl)
-	return
+	return cache.Copy(ele.Value.(*entry).value, dstVal)
 }
 
 // Del removes the key from the cache
@@ -284,7 +261,7 @@ func (c *LRU) Touch(key string, exp time.Duration) error {
 
 	ent := ee.Value.(*entry)
 	switch {
-	case exp == NeverExpires:
+	case exp == cache.NeverExpires:
 		ent.exp = time.Time{}
 	default:
 		ent.exp = time.Now().Add(exp)

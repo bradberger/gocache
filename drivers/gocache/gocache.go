@@ -3,7 +3,6 @@
 package gocache
 
 import (
-	"reflect"
 	"time"
 
 	"github.com/bradberger/gocache/cache"
@@ -31,15 +30,7 @@ func (c *Cache) Get(key string, dstVal interface{}) error {
 	if !found {
 		return cache.ErrCacheMiss
 	}
-	el := reflect.ValueOf(dstVal)
-	if el.Kind() == reflect.Ptr {
-		el = el.Elem()
-	}
-	if !el.CanSet() {
-		return cache.ErrInvalidDstVal
-	}
-	el.Set(reflect.ValueOf(val))
-	return nil
+	return cache.Copy(val, dstVal)
 }
 
 // Set implements the cache.Cache setter interface

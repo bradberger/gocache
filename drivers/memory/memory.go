@@ -1,5 +1,7 @@
 // Package memory implements a very basic, fully functional cache.Cache interface
 // with in-memory caching and key expiration. Expired keys are purged immediately.
+// There are no controls over the size of the cache, so for long-standing caches,
+// the lru package is a better option as it manages the cache in-memory size.
 package memory
 
 import (
