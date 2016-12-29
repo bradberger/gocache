@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/bradberger/gocache/cache"
-	"github.com/bradberger/gokv/codec"
+	"github.com/bradberger/gocache/codec"
 	"github.com/stretchr/testify/assert"
 )
 

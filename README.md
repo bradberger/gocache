@@ -10,7 +10,10 @@ Current drivers include:
 - Redis via [redigo](https://godoc.org/github.com/garyburd/redigo/redis)
 - [github.com/patricknm/go-cache](https://godoc.org/github.com/patricknm/go-cache)
 - [App Engine memcache](https://godoc.org/google.golang.org/appengine/memcache)
-- [github.com/armon/go-radix](https://godoc.org/github.com/armon/go-radix)
+- [Go-radix](https://godoc.org/github.com/armon/go-radix)
+- [FreeCache](https://godoc.org/github.com/coocood/freecache)
+- [BigCache](https://godoc.org/github.com/allegro/bigcache)
+- [Golang-lru](https://godoc.org/github.com/hashicorp/golang-lru)
 
 More drivers are most welcome! Just make sure they meet at least the `"cache".Cache`
 interface and are unit tested.
