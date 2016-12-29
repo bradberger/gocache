@@ -1,6 +1,7 @@
 package bigcache
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -36,6 +37,9 @@ func NewWithClient(bc *bigcache.BigCache) *Client {
 func (c *Client) Get(key string, dstVal interface{}) error {
 	b, err := c.bc.Get(key)
 	if err != nil {
+		if err.Error() == fmt.Sprintf(`Entry "%s" not found`, key) {
+			err = cache.ErrNotFound
+		}
 		return err
 	}
 	if err := Codec.Unmarshal(b, dstVal); err != nil {

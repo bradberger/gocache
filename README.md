@@ -1,3 +1,6 @@
+[![Build Status](https://semaphoreci.com/api/v1/brad/gocache/branches/master/shields_badge.svg)](https://semaphoreci.com/brad/gocache)
+[![codecov](https://codecov.io/gh/bradberger/gocache/branch/master/graph/badge.svg)](https://codecov.io/gh/bradberger/gocache)
+
 Cache is a package which implements a unified interface for various Golang based cache.
 
 Current drivers include:

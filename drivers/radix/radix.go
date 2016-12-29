@@ -2,6 +2,7 @@ package radix
 
 import (
 	"reflect"
+	"sync"
 	"time"
 
 	goradix "github.com/armon/go-radix"
@@ -15,6 +16,7 @@ var (
 // Tree implements a cache store with a radix tree
 type Tree struct {
 	tree *goradix.Tree
+	sync.RWMutex
 }
 
 // New returns an initialized tree
@@ -24,7 +26,9 @@ func New() *Tree {
 
 // Get implements the "cache.KeyStore".Get() interface
 func (t *Tree) Get(key string, dstVal interface{}) error {
+	t.RLock()
 	val, found := t.Tree().Get(key)
+	t.RUnlock()
 	if !found {
 		return cache.ErrCacheMiss
 	}
@@ -41,7 +45,9 @@ func (t *Tree) Get(key string, dstVal interface{}) error {
 
 // Set implements the "cache.KeyStore".Set() interface
 func (t *Tree) Set(key string, val interface{}, exp time.Duration) error {
+	t.Lock()
 	t.Tree().Insert(key, val)
+	t.Unlock()
 	if exp > 0 {
 		go func(key string, exp time.Duration) {
 			select {
@@ -55,13 +61,17 @@ func (t *Tree) Set(key string, val interface{}, exp time.Duration) error {
 
 // Del implements the "cache.KeyStore".Del() interface
 func (t *Tree) Del(key string) error {
+	t.Lock()
 	t.Tree().Delete(key)
+	t.Unlock()
 	return nil
 }
 
 // Exists returns true if the key exists
 func (t *Tree) Exists(key string) bool {
+	t.RLock()
 	_, found := t.Tree().Get(key)
+	t.RUnlock()
 	return found
 }
 
