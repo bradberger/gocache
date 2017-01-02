@@ -146,8 +146,11 @@ func (t *Tree) Del(key string) error {
 }
 
 // Exists implements the "cache.Cache".Exists interface
-func (t *Tree) Exists(key string) bool {
-	return t.tree.Has(&item{key: key})
+func (t *Tree) Exists(key string) (exists bool) {
+	t.RLock()
+	exists = t.tree.Has(&item{key: key})
+	t.RUnlock()
+	return
 }
 
 // Tree returns the underlying btree
