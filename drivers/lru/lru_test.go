@@ -8,10 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func init() {
-	TickerDuration = time.Second
-}
-
 type testStruct struct {
 	Foo string
 }
@@ -107,12 +103,9 @@ func TestSetRemove(t *testing.T) {
 	assert.NoError(t, c.Set("foobar", "", 0))
 	assert.NoError(t, c.Set("foo", "bar", 0))
 	assert.NoError(t, c.Set("bar", "foo", 0))
-	time.Sleep(2 * TickerDuration)
-	c.RLock()
 	assert.Equal(t, "bar", c.ll.Front().Value.(*entry).key)
 	assert.Equal(t, "foo", c.ll.Back().Value.(*entry).key)
 	assert.Equal(t, int(2), c.Len())
-	c.RUnlock()
 }
 
 func TestDel(t *testing.T) {
@@ -126,7 +119,7 @@ func TestDel(t *testing.T) {
 func TestExpires(t *testing.T) {
 	c := New(Megabyte, 2)
 	assert.NoError(t, c.Set("foo", "bar", 1*time.Second))
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 	assert.False(t, c.Exists("foo"))
 }
 

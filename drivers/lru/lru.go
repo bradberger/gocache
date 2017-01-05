@@ -28,15 +28,6 @@ var (
 	// ensure LRU struct implements the cache.KeyStore interface
 	_ cache.Cache = (*LRU)(nil)
 
-	// TickerDuration is the duration between housekeeping for deleting values
-	// if the total cache size is too large, or the max entries are too many,
-	// or items are expired. By default it's one minute, but that definitely
-	// should be tuned according to your use-case scenario. Expired items will
-	// never be returned with Get() regardless of this setting. This is more
-	// about memory management and "garbage collection" pauses more than anything
-	// else.
-	TickerDuration = 1 * time.Minute
-
 	// ErrCannotSetValue is returned when an previously set cache value pointer cannot be set.
 	ErrCannotSetValue = errors.New("cannot set value of interface")
 
