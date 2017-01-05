@@ -33,7 +33,11 @@ var (
 	// ErrCannotAssignValue is returned when a previously set cache value pointer cannot be
 	// updated because the new value's type cannot be assigned to the previous value's type.
 	ErrCannotAssignValue = errors.New("cannot assign value")
-
+	// ErrCASConflict means that a CompareAndSwap call failed due to the
+	// cached value being modified between the Get and the CompareAndSwap.
+	// If the cached value was simply evicted rather than replaced,
+	// ErrNotStored will be returned instead.
+	ErrCASConflict = errors.New("compare-and-swap conflict")
 	// NeverExpires is the duration which should be set for a key to never expire because of duration
 	NeverExpires = time.Duration(0)
 )

@@ -16,20 +16,20 @@ type diffTestStruct struct {
 	Bar string
 }
 
-func TestNew(t *testing.T) {
-	c := New(Megabyte, 100)
+func TestNewBasic(t *testing.T) {
+	c := NewBasic(Megabyte, 100)
 	assert.NotNil(t, c)
 	assert.NotNil(t, c.cache)
 	assert.NotNil(t, c.ll)
 }
 
 func TestSet(t *testing.T) {
-	c := New(Megabyte, 100)
+	c := NewBasic(Megabyte, 100)
 	assert.NoError(t, c.Set("foo", "bar", 0))
 	assert.NoError(t, c.Set("foobar", "", 0))
 	assert.NoError(t, c.Set("bar", "foo", 0))
-	assert.Equal(t, "bar", c.ll.Front().Value.(*entry).key)
-	assert.Equal(t, "foo", c.ll.Back().Value.(*entry).key)
+	assert.Equal(t, "bar", c.ll.Front().Value.(*item).key)
+	assert.Equal(t, "foo", c.ll.Back().Value.(*item).key)
 	assert.True(t, c.Exists("foo"))
 	assert.True(t, c.Exists("bar"))
 	assert.True(t, c.Exists("foobar"))
@@ -37,11 +37,11 @@ func TestSet(t *testing.T) {
 
 	// Make sure non-front elements at front after set again
 	assert.NoError(t, c.Set("foo", "bar", 0))
-	assert.Equal(t, "foo", c.ll.Front().Value.(*entry).key)
+	assert.Equal(t, "foo", c.ll.Front().Value.(*item).key)
 }
 
 func TestSetWithStructs(t *testing.T) {
-	c := New(Megabyte, 100)
+	c := NewBasic(Megabyte, 100)
 	var v testStruct
 
 	// Assign values back to back with different types, but not pointers
@@ -61,9 +61,26 @@ func TestSetWithStructs(t *testing.T) {
 	assert.Equal(t, ErrCannotAssignValue, c.Get("foo", &diffTestStruct{}))
 }
 
+func TestSetItem(t *testing.T) {
+	c := NewBasic(Megabyte, 100)
+
+	assert.Equal(t, cache.ErrNotStored, c.CompareAndSwap("foo", "bar", 0, 1))
+	assert.NoError(t, c.SetItem("foo", "bar", 0, 1))
+	assert.NoError(t, c.CompareAndSwap("foo", "bar", 0, 1))
+	assert.NoError(t, c.SetItem("foo", "bar", 0, 2))
+	assert.Equal(t, cache.ErrCASConflict, c.CompareAndSwap("foo", "bar", 0, 1))
+}
+
+func TestExpire(t *testing.T) {
+	c := NewBasic(Megabyte, 100)
+	assert.NotPanics(t, func() {
+		c.expire("foobar")
+	})
+}
+
 func TestGet(t *testing.T) {
 	var s string
-	c := New(Megabyte, 100)
+	c := NewBasic(Megabyte, 100)
 	assert.Equal(t, cache.ErrCacheMiss, c.Get("foo", &s))
 
 	ss := "bar"
@@ -73,43 +90,43 @@ func TestGet(t *testing.T) {
 }
 
 func TestTouch(t *testing.T) {
-	c := New(Megabyte, 100)
+	c := NewBasic(Megabyte, 100)
 	assert.Equal(t, cache.ErrCacheMiss, c.Touch("foo", 0))
 	assert.NoError(t, c.Set("foo", "bar", time.Minute))
 	assert.NoError(t, c.Set("bar", "foo", 0))
 	assert.NoError(t, c.Touch("foo", time.Hour))
-	assert.Equal(t, "foo", c.ll.Front().Value.(*entry).key)
-	assert.True(t, time.Now().Add(30*time.Minute).Before(c.ll.Front().Value.(*entry).exp))
+	assert.Equal(t, "foo", c.ll.Front().Value.(*item).key)
+	assert.True(t, time.Now().Add(30*time.Minute).Before(c.ll.Front().Value.(*item).exp))
 	assert.NoError(t, c.Touch("foo", 0))
-	assert.True(t, c.ll.Front().Value.(*entry).exp.IsZero())
+	assert.True(t, c.ll.Front().Value.(*item).exp.IsZero())
 }
 
 func TestGetExpired(t *testing.T) {
 	var v string
-	c := New(Megabyte, 100)
+	c := NewBasic(Megabyte, 100)
 	assert.NoError(t, c.Set("foo", "bar", -1*time.Minute))
 	assert.Equal(t, cache.ErrCacheMiss, c.Get("foo", &v))
 }
 
 func TestInvalidGet(t *testing.T) {
 	var s string
-	c := New(Megabyte, 100)
+	c := NewBasic(Megabyte, 100)
 	assert.NoError(t, c.Set("foo", s, 0))
 	assert.Equal(t, cache.ErrInvalidDstVal, c.Get("foo", s))
 }
 
 func TestSetRemove(t *testing.T) {
-	c := New(Megabyte, 2)
+	c := NewBasic(Megabyte, 2)
 	assert.NoError(t, c.Set("foobar", "", 0))
 	assert.NoError(t, c.Set("foo", "bar", 0))
 	assert.NoError(t, c.Set("bar", "foo", 0))
-	assert.Equal(t, "bar", c.ll.Front().Value.(*entry).key)
-	assert.Equal(t, "foo", c.ll.Back().Value.(*entry).key)
+	assert.Equal(t, "bar", c.ll.Front().Value.(*item).key)
+	assert.Equal(t, "foo", c.ll.Back().Value.(*item).key)
 	assert.Equal(t, int(2), c.Len())
 }
 
 func TestDel(t *testing.T) {
-	c := New(Megabyte, 2)
+	c := NewBasic(Megabyte, 2)
 	assert.NoError(t, c.Set("foo", "bar", 0))
 	assert.NoError(t, c.Del("foo"))
 	assert.Nil(t, c.ll.Back())
@@ -117,19 +134,19 @@ func TestDel(t *testing.T) {
 }
 
 func TestExpires(t *testing.T) {
-	c := New(Megabyte, 2)
+	c := NewBasic(Megabyte, 2)
 	assert.NoError(t, c.Set("foo", "bar", 1*time.Second))
 	time.Sleep(2 * time.Second)
 	assert.False(t, c.Exists("foo"))
 }
 
 func TestTicker(t *testing.T) {
-	c := New(Megabyte, 10)
+	c := NewBasic(Megabyte, 10)
 	assert.NoError(t, c.Set("foo", "bar", 0))
 }
 
 func TestSizeEviction(t *testing.T) {
-	c := New(Byte, 100)
+	c := NewBasic(Byte, 100)
 	assert.Equal(t, uint64(0), c.size)
 	assert.NoError(t, c.Set("foo", "bar", 0))
 	assert.Equal(t, uint64(0), c.size)
@@ -137,13 +154,13 @@ func TestSizeEviction(t *testing.T) {
 }
 
 func TestAdd(t *testing.T) {
-	c := New(Megabyte, 1000)
+	c := NewBasic(Megabyte, 1000)
 	assert.NoError(t, c.Add("foo", "bar", 0))
 	assert.Equal(t, cache.ErrNotStored, c.Add("foo", "bar", 0))
 }
 
 func TestReplace(t *testing.T) {
-	c := New(Megabyte, 1000)
+	c := NewBasic(Megabyte, 1000)
 	var v string
 	assert.Equal(t, cache.ErrNotStored, c.Replace("foo", "bar"))
 	assert.NoError(t, c.Set("foo", "bar", 0))
@@ -156,7 +173,7 @@ func TestReplace(t *testing.T) {
 
 func TestIncrement(t *testing.T) {
 	var i uint64
-	c := New(Megabyte, 1000)
+	c := NewBasic(Megabyte, 1000)
 
 	assert.NoError(t, c.Set("foo", uint64(1), 0))
 	v, err := c.Increment("foo", 1)
@@ -178,7 +195,7 @@ func TestIncrement(t *testing.T) {
 
 func TestDecrement(t *testing.T) {
 	var i uint64
-	c := New(Megabyte, 1000)
+	c := NewBasic(Megabyte, 1000)
 
 	assert.NoError(t, c.Set("foo", uint64(2), 0))
 	v, err := c.Decrement("foo", 1)
@@ -200,7 +217,7 @@ func TestDecrement(t *testing.T) {
 
 func TestPrepend(t *testing.T) {
 
-	c := New(Megabyte, 1000)
+	c := NewBasic(Megabyte, 1000)
 
 	var s string
 	sbar := "bar"
@@ -230,7 +247,7 @@ func TestPrepend(t *testing.T) {
 
 func TestAppend(t *testing.T) {
 
-	c := New(Megabyte, 1000)
+	c := NewBasic(Megabyte, 1000)
 
 	var s string
 	sbar := "bar"
@@ -259,60 +276,35 @@ func TestAppend(t *testing.T) {
 }
 
 func BenchmarkSet(b *testing.B) {
-	c := New(Gigabyte, b.N)
+	c := NewBasic(Gigabyte, b.N)
 	for i := 0; i < b.N; i++ {
-		c.Set("foo", "bar", 0)
+		c.Set(randKey(), "bar", 0)
 	}
 }
 
 func BenchmarkSetParallel(b *testing.B) {
-	c := New(Gigabyte, b.N)
+	c := NewBasic(Gigabyte, b.N)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			c.Set("foo", "bar", 0)
+			c.Set(randKey(), "bar", 0)
 		}
 	})
 }
 
 func BenchmarkGet(b *testing.B) {
-	c := New(Gigabyte, 500000)
-	c.Set("foo", "bar", 0)
+	c := NewBasic(Gigabyte, 500000)
 	for i := 0; i < b.N; i++ {
 		var s string
-		c.Get("foo", &s)
+		c.Get(randKey(), &s)
 	}
 }
 
 func BenchmarkGetParallel(b *testing.B) {
-	c := New(Gigabyte, 500000)
-	c.Set("foo", "bar", 0)
+	c := NewBasic(Gigabyte, 500000)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			var s string
-			c.Get("foo", &s)
-		}
-	})
-}
-
-func BenchmarkGetSetParallel(b *testing.B) {
-	c := New(Gigabyte, 500000)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			var s string
-			c.Set("foo", "bar", 0)
-			c.Get("foo", &s)
-		}
-	})
-}
-
-func BenchmarkGetSetDelParallel(b *testing.B) {
-	c := New(Gigabyte, 500000)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			var s string
-			c.Set("foo", "bar", 0)
-			c.Get("foo", &s)
-			c.Del("foo")
+			c.Get(randKey(), &s)
 		}
 	})
 }
