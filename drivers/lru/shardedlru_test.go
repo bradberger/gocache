@@ -13,13 +13,6 @@ func randKey() string {
 	return strconv.Itoa(rand.Intn(10000000))
 }
 
-func TestNewSharded(t *testing.T) {
-	c := New()
-	assert.NotNil(t, c)
-	assert.NotNil(t, c.shards)
-	assert.NotNil(t, c.ch)
-}
-
 func TestShardedGetSet(t *testing.T) {
 	c := NewSharded(2<<10, Megabyte, 256)
 
