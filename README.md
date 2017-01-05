@@ -14,6 +14,12 @@ Current drivers include:
 - [FreeCache](https://godoc.org/github.com/coocood/freecache)
 - [BigCache](https://godoc.org/github.com/allegro/bigcache)
 - [Golang-lru](https://godoc.org/github.com/hashicorp/golang-lru)
+- A bridge driver to [github.com/bradberger/gokv]((https://godoc.org/github.com/bradberger/gokv) which can implement
+  anything which implements the `kv.Store` interface, currently including:
+    - [AppEngine datastore](https://godoc.org/github.com/bradberger/gokv/drivers/appengine/datastore)
+    - [BoltDB](https://godoc.org/github.com/bradberger/gokv/drivers/boltdb)
+    - [DiskV](https://godoc.org/github.com/bradberger/gokv/drivers/diskv)
+    - [LevelDB](https://godoc.org/github.com/bradberger/gokv/drivers/level)
 
 More drivers are most welcome! Just make sure they meet at least the `"cache".Cache`
 interface and are unit tested.
