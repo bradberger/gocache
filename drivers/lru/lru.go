@@ -9,6 +9,7 @@ import (
 	"errors"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bradberger/gocache/cache"
@@ -59,8 +60,8 @@ type LRU struct {
 
 	ll    *list.List
 	cache map[string]*list.Element
+	size  uint64
 
-	ticker *time.Ticker
 	sync.RWMutex
 }
 
@@ -68,11 +69,6 @@ type entry struct {
 	key   string
 	value interface{}
 	exp   time.Time
-}
-
-type cmd struct {
-	action, key string
-	value       interface{}
 }
 
 // New creates a new LRU cache with the given number of max entries
@@ -83,107 +79,53 @@ func New(maxSize uint64, maxEntries int) *LRU {
 		cache:      make(map[string]*list.Element, maxEntries),
 		ll:         list.New(),
 	}
-	c.Start()
 	return c
 }
 
 // Set sets the key/value pair
-func (c *LRU) Set(key string, value interface{}, exp time.Duration) error {
+func (c *LRU) Set(key string, value interface{}, exp time.Duration) (err error) {
+
+	// Dereference pointers to optimize GC cycles
+	if el := reflect.ValueOf(value); el.Kind() == reflect.Ptr {
+		value = el.Elem().Interface()
+	}
 
 	ent := getEntryPool.Get().(*entry)
 	ent.key = key
 	ent.value = value
 	if exp != cache.NeverExpires {
 		ent.exp = time.Now().Add(exp)
+		go func(key string, exp time.Duration) {
+			time.Sleep(exp)
+			c.Lock()
+			if ee, ok := c.cache[key]; ok && ee.Value.(*entry).exp.Before(time.Now()) {
+				c.delete(key)
+			}
+			c.Unlock()
+		}(key, exp)
 	}
 
+	atomic.AddUint64(&c.size, uint64(reflect.TypeOf(ent).Size()))
 	c.Lock()
-	defer c.Unlock()
 	if ee, ok := c.cache[key]; ok {
-
+		atomic.AddUint64(&c.size, ^(uint64(reflect.TypeOf(ee.Value).Size()) - 1))
+		ee.Value = ent
 		c.ll.MoveToFront(ee)
-
-		// If the current value is not a pointer, we can set it without problem
-		// as there will be no references to it outside the current cache, so
-		// it can't be changed except through these funcs.
-		curEl := reflect.ValueOf(ee.Value.(*entry).value)
-		if curEl.Kind() != reflect.Ptr {
-			ee.Value = ent
-			return nil
+	} else {
+		ele := c.ll.PushFront(ent)
+		c.cache[key] = ele
+		if c.ll.Len() > c.MaxEntries {
+			c.delete(c.ll.Back().Value.(*entry).key)
 		}
-
-		// If underlying value is a pointer, we must reflect.ValueOf(ee.Value).Kind()make sure that the
-		// new value and the previous value are the same types, otherwise
-		// unexpected panics could occur.
-		return cache.Copy(value, ee.Value.(*entry).value)
 	}
-
-	ele := c.ll.PushFront(ent)
-	c.cache[key] = ele
-	return nil
-}
-
-// Start starts the ticker for housekeeping
-func (c *LRU) Start() {
-
-	// Create the ticker and handle the ticks
-	c.ticker = time.NewTicker(TickerDuration)
-	go func() {
-		select {
-		case <-c.ticker.C:
-
-			go func() {
-				// If too many entries, delete excess. Find expired as well.
-				var ent *entry
-				var del []*list.Element
-				now := time.Now()
-
-				// Check for expired items.
-				c.Lock()
-				defer c.Unlock()
-				maxEntries := c.MaxEntries
-				maxSize := c.MaxSize
-				for _, ele := range c.cache {
-					ent = ele.Value.(*entry)
-					if ent.exp.IsZero() {
-						continue
-					}
-					if now.After(ent.exp) {
-						del = append(del, ele)
-					}
-				}
-
-				// Calculate the future length, taking into consideration
-				// the elements we're going to delete
-				l := c.ll.Len() - len(del)
-
-				// Remove the excess entries
-				if maxEntries > 0 && l > maxEntries {
-					for i := 0; i < l-maxEntries; i++ {
-						del = append(del, c.ll.Back())
-					}
-				}
-
-				// Remove the elements, so we can calculate the total size better.
-				c.removeElements(del)
-
-				// If in-memory size too big, delete until it's not
-				if maxSize > 0 {
-					var toDelete []*list.Element
-					size := uint64(reflect.TypeOf(c.cache).Size())
-					for {
-						if size < maxSize {
-							break
-						}
-						last := c.ll.Back()
-						size -= uint64(reflect.TypeOf(last).Size())
-						toDelete = append(toDelete, last)
-					}
-					c.removeElements(toDelete)
-				}
-			}()
+	for c.size > c.MaxSize {
+		if b := c.ll.Back(); b != nil {
+			c.delete(b.Value.(*entry).key)
 		}
-	}()
+	}
+	c.Unlock()
+
+	return nil
 }
 
 // Get fetches the key into the dstVal. It returns an error if the value doesn't exist.
@@ -209,14 +151,17 @@ func (c *LRU) Get(key string, dstVal interface{}) (err error) {
 	return cache.Copy(ele.Value.(*entry).value, dstVal)
 }
 
+func (c *LRU) delete(key string) {
+	if ele, hit := c.cache[key]; hit {
+		c.removeElement(ele)
+	}
+}
+
 // Del removes the key from the cache
 func (c *LRU) Del(key string) (err error) {
 	c.Lock()
-	defer c.Unlock()
-	ele, hit := c.cache[key]
-	if hit {
-		c.removeElement(ele)
-	}
+	c.delete(key)
+	c.Unlock()
 	return
 }
 
@@ -242,10 +187,12 @@ func (c *LRU) removeElement(e *list.Element) {
 
 func (c *LRU) removeElements(e []*list.Element) {
 	for i := range e {
-		c.ll.Remove(e[i])
-		kv := e[i].Value.(*entry)
-		delete(c.cache, kv.key)
-		getEntryPool.Put(kv)
+		if prev := c.ll.Remove(e[i]); prev != nil {
+			kv := prev.(*entry)
+			atomic.AddUint64(&c.size, ^uint64(uint64(reflect.TypeOf(kv).Size())-1))
+			delete(c.cache, kv.key)
+			getEntryPool.Put(kv)
+		}
 	}
 }
 
@@ -295,51 +242,49 @@ func (c *LRU) Replace(key string, value interface{}) error {
 // Increment increases the key's value by delta. The exipration remains the same.
 // The existing value must be a uint64 or a pointer to a uint64
 func (c *LRU) Increment(key string, delta uint64) (uint64, error) {
-	c.Lock()
-	defer c.Unlock()
+
+	c.RLock()
 	e, exists := c.cache[key]
+	c.RUnlock()
 	if !exists {
 		return 0, cache.ErrNotStored
 	}
-	ee := e.Value.(*entry)
-	switch ee.value.(type) {
-	case uint64:
-		newVal := ee.value.(uint64) + delta
-		ee.value = newVal
-		c.ll.MoveToFront(e)
-		return newVal, nil
-	case *uint64:
-		newVal := *ee.value.(*uint64) + delta
-		reflect.ValueOf(ee.value).Elem().SetUint(newVal)
-		c.ll.MoveToFront(e)
-		return newVal, nil
+
+	v, ok := e.Value.(*entry).value.(uint64)
+	if !ok {
+		return 0, ErrCannotAssignValue
 	}
-	return 0, ErrCannotAssignValue
+
+	v += delta
+
+	c.Lock()
+	e.Value.(*entry).value = v
+	c.ll.MoveToFront(e)
+	c.Unlock()
+
+	return v, nil
 }
 
 // Decrement decreases the key's value by delta. The expiration remains the same.
 // The underlying value to increment must be a uint64 or pointer to a uint64.
 func (c *LRU) Decrement(key string, delta uint64) (uint64, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.RLock()
 	e, exists := c.cache[key]
+	c.RUnlock()
 	if !exists {
 		return 0, cache.ErrNotStored
 	}
-	ee := e.Value.(*entry)
-	switch ee.value.(type) {
-	case uint64:
-		newVal := ee.value.(uint64) - delta
-		ee.value = newVal
-		c.ll.MoveToFront(e)
-		return newVal, nil
-	case *uint64:
-		newVal := *ee.value.(*uint64) - delta
-		reflect.ValueOf(ee.value).Elem().SetUint(newVal)
-		c.ll.MoveToFront(e)
-		return newVal, nil
+	v, ok := e.Value.(*entry).value.(uint64)
+	if !ok || delta > v {
+		return 0, cache.ErrCannotAssignValue
 	}
-	return 0, ErrCannotAssignValue
+	v -= delta
+	c.Lock()
+	e.Value.(*entry).value = v
+	c.ll.MoveToFront(e)
+	c.Unlock()
+
+	return v, nil
 }
 
 // Prepend prepends the value to the current key value. The value to prepend
@@ -370,12 +315,8 @@ func (c *LRU) Prepend(key string, value interface{}) error {
 	switch ee.value.(type) {
 	case []byte:
 		ee.value = append(toPrepend, ee.value.([]byte)...)
-	case *[]byte:
-		reflect.ValueOf(ee.value).Elem().SetBytes(append(toPrepend, *ee.value.(*[]byte)...))
 	case string:
 		ee.value = string(toPrepend) + ee.value.(string)
-	case *string:
-		reflect.ValueOf(ee.value).Elem().SetString(string(toPrepend) + (*ee.value.(*string)))
 	default:
 		return ErrCannotAssignValue
 	}
@@ -411,12 +352,8 @@ func (c *LRU) Append(key string, value interface{}) error {
 	switch ee.value.(type) {
 	case []byte:
 		ee.value = append(ee.value.([]byte), toAppend...)
-	case *[]byte:
-		reflect.ValueOf(ee.value).Elem().SetBytes(append(*ee.value.(*[]byte), toAppend...))
 	case string:
 		ee.value = ee.value.(string) + string(toAppend)
-	case *string:
-		reflect.ValueOf(ee.value).Elem().SetString((*ee.value.(*string)) + string(toAppend))
 	default:
 		return ErrCannotAssignValue
 	}

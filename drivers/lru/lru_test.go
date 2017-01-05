@@ -54,7 +54,7 @@ func TestSetWithStructs(t *testing.T) {
 
 	// Try to assign a different type to existing pointer.
 	assert.NoError(t, c.Set("foo", &testStruct{"bar"}, 0))
-	assert.Equal(t, ErrCannotAssignValue, c.Set("foo", diffTestStruct{"bar"}, 0))
+	assert.NoError(t, c.Set("foo", diffTestStruct{"bar"}, 0))
 
 	// Try to assign same type, non-pointer to existing pointer.
 	assert.NoError(t, c.Set("foo", testStruct{"foobar"}, 0))
@@ -133,15 +133,14 @@ func TestExpires(t *testing.T) {
 func TestTicker(t *testing.T) {
 	c := New(Megabyte, 10)
 	assert.NoError(t, c.Set("foo", "bar", 0))
-	assert.NotNil(t, c.ticker)
 }
 
 func TestSizeEviction(t *testing.T) {
 	c := New(Byte, 100)
-	bar := "bar"
-	assert.NoError(t, c.Set("foo", bar, 0))
-	time.Sleep(TickerDuration * 2)
-	assert.Equal(t, cache.ErrCacheMiss, c.Get("foo", &bar))
+	assert.Equal(t, uint64(0), c.size)
+	assert.NoError(t, c.Set("foo", "bar", 0))
+	assert.Equal(t, uint64(0), c.size)
+	assert.False(t, c.Exists("foo"))
 }
 
 func TestAdd(t *testing.T) {
@@ -178,14 +177,6 @@ func TestIncrement(t *testing.T) {
 	assert.Equal(t, uint64(0), v)
 	assert.Equal(t, cache.ErrNotStored, err)
 
-	// Increment pointer
-	i = 0
-	ii := &i
-	assert.NoError(t, c.Set("foo", ii, 0))
-	_, err = c.Increment("foo", 1)
-	assert.NoError(t, err)
-	assert.Equal(t, uint64(1), *ii)
-
 	// Increment a string
 	assert.NoError(t, c.Set("foobar", "foobar", 0))
 	_, err = c.Increment("foobar", 1)
@@ -208,14 +199,6 @@ func TestDecrement(t *testing.T) {
 	assert.Equal(t, uint64(0), v)
 	assert.Equal(t, cache.ErrNotStored, err)
 
-	// Increment pointer
-	i = 2
-	ii := &i
-	assert.NoError(t, c.Set("foo", ii, 0))
-	_, err = c.Decrement("foo", 1)
-	assert.NoError(t, err)
-	assert.Equal(t, uint64(1), *ii)
-
 	// Increment a string
 	assert.NoError(t, c.Set("foobar", "foobar", 0))
 	_, err = c.Decrement("foobar", 1)
@@ -223,36 +206,29 @@ func TestDecrement(t *testing.T) {
 }
 
 func TestPrepend(t *testing.T) {
-	var s, ss string
 
 	c := New(Megabyte, 1000)
+
+	var s string
+	sbar := "bar"
 	assert.Equal(t, ErrCannotAssignValue, c.Prepend("foo", 1))
-	assert.Equal(t, cache.ErrNotStored, c.Prepend("foo", "bar"))
-	assert.NoError(t, c.Set("foo", "bar", 0))
-	assert.NoError(t, c.Prepend("foo", "bar"))
+	assert.Equal(t, cache.ErrNotStored, c.Prepend("foo", sbar))
+	assert.NoError(t, c.Set("foo", sbar, 0))
+	assert.NoError(t, c.Prepend("foo", &sbar))
+	assert.NoError(t, c.Prepend("foo", "foo"))
 	assert.NoError(t, c.Get("foo", &s))
-	assert.Equal(t, "barbar", s)
+	assert.Equal(t, "foobarbar", s)
 
-	assert.NoError(t, c.Set("foo", &s, 0))
-	assert.NoError(t, c.Prepend("foo", &s))
-	assert.NoError(t, c.Get("foo", &ss))
-	assert.Equal(t, "barbarbarbar", s)
-	assert.Equal(t, "barbarbarbar", ss)
-
-	// Prepend with byte slices, pointers of byte slices.
-	var b, bb []byte
+	// Prepend with byte slices
+	var b []byte
+	bar := []byte("bar")
 	assert.Equal(t, ErrCannotAssignValue, c.Prepend("bar", 1))
 	assert.Equal(t, cache.ErrNotStored, c.Prepend("bar", []byte("bar")))
-	assert.NoError(t, c.Set("bar", []byte("bar"), 0))
-	assert.NoError(t, c.Prepend("bar", []byte("bar")))
+	assert.NoError(t, c.Set("bar", bar, 0))
+	assert.NoError(t, c.Prepend("bar", &bar))
+	assert.NoError(t, c.Prepend("bar", []byte("foo")))
 	assert.NoError(t, c.Get("bar", &b))
-	assert.Equal(t, []byte("barbar"), b)
-
-	assert.NoError(t, c.Set("bar", &b, 0))
-	assert.NoError(t, c.Prepend("bar", &b))
-	assert.NoError(t, c.Get("bar", &bb))
-	assert.Equal(t, []byte("barbarbarbar"), b)
-	assert.Equal(t, []byte("barbarbarbar"), bb)
+	assert.Equal(t, []byte("foobarbar"), b)
 
 	// Prepend with invalid types
 	assert.NoError(t, c.Set("int", 1, 0))
@@ -260,36 +236,29 @@ func TestPrepend(t *testing.T) {
 }
 
 func TestAppend(t *testing.T) {
-	var s, ss string
 
 	c := New(Megabyte, 1000)
+
+	var s string
+	sbar := "bar"
 	assert.Equal(t, ErrCannotAssignValue, c.Append("foo", 1))
-	assert.Equal(t, cache.ErrNotStored, c.Append("foo", "bar"))
-	assert.NoError(t, c.Set("foo", "bar", 0))
-	assert.NoError(t, c.Append("foo", "bar"))
+	assert.Equal(t, cache.ErrNotStored, c.Append("foo", sbar))
+	assert.NoError(t, c.Set("foo", sbar, 0))
+	assert.NoError(t, c.Append("foo", &sbar))
+	assert.NoError(t, c.Append("foo", "foo"))
 	assert.NoError(t, c.Get("foo", &s))
-	assert.Equal(t, "barbar", s)
+	assert.Equal(t, "barbarfoo", s)
 
-	assert.NoError(t, c.Set("foo", &s, 0))
-	assert.NoError(t, c.Append("foo", &s))
-	assert.NoError(t, c.Get("foo", &ss))
-	assert.Equal(t, "barbarbarbar", s)
-	assert.Equal(t, "barbarbarbar", ss)
-
-	// Append with byte slices, pointers of byte slices.
-	var b, bb []byte
+	// Append with byte slices
+	var b []byte
+	bar := []byte("bar")
 	assert.Equal(t, ErrCannotAssignValue, c.Append("bar", 1))
-	assert.Equal(t, cache.ErrNotStored, c.Append("bar", []byte("bar")))
-	assert.NoError(t, c.Set("bar", []byte("bar"), 0))
-	assert.NoError(t, c.Append("bar", []byte("bar")))
+	assert.Equal(t, cache.ErrNotStored, c.Append("bar", bar))
+	assert.NoError(t, c.Set("bar", bar, 0))
+	assert.NoError(t, c.Append("bar", "foo"))
+	assert.NoError(t, c.Append("bar", &bar))
 	assert.NoError(t, c.Get("bar", &b))
-	assert.Equal(t, []byte("barbar"), b)
-
-	assert.NoError(t, c.Set("bar", &b, 0))
-	assert.NoError(t, c.Append("bar", &b))
-	assert.NoError(t, c.Get("bar", &bb))
-	assert.Equal(t, []byte("barbarbarbar"), b)
-	assert.Equal(t, []byte("barbarbarbar"), bb)
+	assert.Equal(t, []byte("barfoobar"), b)
 
 	// Append with invalid types
 	assert.NoError(t, c.Set("int", 1, 0))
